@@ -7,10 +7,55 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input"
 import { Wallet, Plus, LogOut } from "lucide-react"
 import LinkCreatedView from "@/components/link-created-view"
-import { useConnect, useAccount, usePublicClient, useSignMessage, useDisconnect } from "wagmi"
+import { useConnect, useAccount, usePublicClient, useSignMessage, useDisconnect, useBalance, useSwitchChain } from "wagmi"
 import { SiweMessage, generateNonce } from "siwe"
 import { cbWalletConnector } from "@/wagmi"
 import type { Hex } from "viem"
+import { formatEther, formatUnits } from 'viem'
+import { base, baseSepolia } from 'wagmi/chains'
+
+// トークンのコントラクトアドレスを定義
+const TOKEN_ADDRESSES = {
+  [base.id]: {
+    eth: undefined,
+    usdc: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48' as const,
+    usdt: '0xdAC17F958D2ee523a2206206994597C13D831ec7' as const,
+  },
+  [baseSepolia.id]: {
+    eth: undefined,
+    usdc: '0x036CbD53842c5426634e7929541eC2318f3dCF7e' as const, // Sepoliaのアドレス
+    usdt: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238' as const, // Sepoliaのアドレス
+  },
+} as const satisfies Record<string, Record<string, `0x${string}` | undefined>>
+
+// Default tokens for when chain is not available
+const DEFAULT_TOKENS = {
+  eth: undefined,
+  usdc: undefined,
+  usdt: undefined,
+}
+
+// デシマルの定義
+const TOKEN_DECIMALS = {
+  eth: 18,
+  usdc: 6,
+  usdt: 6,
+} as const
+
+type TokenType = keyof typeof TOKEN_ADDRESSES[typeof base.id]
+
+const CHAIN_IDS = {
+  BASE_MAINNET: 8453, // Base Mainnet ID
+  BASE_SEPOLIA: 84532, // Base Sepolia ID - this must match what wagmi expects
+} as const
+
+type ChainId = typeof CHAIN_IDS[keyof typeof CHAIN_IDS]
+
+// チェーン名の表示用マッピング
+const CHAIN_NAMES = {
+  [CHAIN_IDS.BASE_MAINNET]: 'Base Mainnet',
+  [CHAIN_IDS.BASE_SEPOLIA]: 'Base Sepolia',
+} as const
 
 export default function SenderUI() {
   const [selectedToken, setSelectedToken] = useState("")
@@ -22,8 +67,9 @@ export default function SenderUI() {
   const [message, setMessage] = useState<SiweMessage | undefined>(undefined)
   const [valid, setValid] = useState<boolean | undefined>(undefined)
 
-  const { address, isConnected } = useAccount()
+  const { address, isConnected, chain } = useAccount()
   const { disconnect } = useDisconnect()
+  const { switchChain } = useSwitchChain()
 
   const { connect } = useConnect({
     mutation: {
@@ -32,9 +78,9 @@ export default function SenderUI() {
           setVerifying(true)
           const address = data.accounts[0]
           const chainId = data.chainId
-          
+
           const nonce = await generateNonce()
-          
+
           const m = new SiweMessage({
             domain: window.location.host,
             address,
@@ -46,10 +92,10 @@ export default function SenderUI() {
             issuedAt: new Date().toISOString(),
             expirationTime: new Date(Date.now() + 1000 * 30).toISOString(),
           })
-          
+
           console.log("生成されたSIWEメッセージ:", m)
           setMessage(m)
-          
+
           const preparedMessage = m.prepareMessage()
           console.log("署名用メッセージ:", preparedMessage)
           signMessage({ message: preparedMessage })
@@ -62,7 +108,7 @@ export default function SenderUI() {
   })
 
   const client = usePublicClient()
-  
+
   const { signMessage } = useSignMessage({
     mutation: {
       onSuccess: async (sig, variables) => {
@@ -87,21 +133,21 @@ export default function SenderUI() {
       })
       return
     }
-    
+
     try {
       const preparedMessage = message.prepareMessage()
       console.log("検証用メッセージ:", preparedMessage)
-      
+
       const isValid = await client.verifyMessage({
         address: address,
         message: preparedMessage,
         signature,
       })
-      
+
       console.log("検証結果:", isValid)
       setValid(isValid)
       setVerifying(false)
-      
+
     } catch (error) {
       console.error("検証エラー:", error)
       setValid(false)
@@ -147,35 +193,74 @@ export default function SenderUI() {
     setAmount("")
   }
 
+  // チェーン切り替えハンドラー
+  const handleNetworkChange = (chainId: string) => {
+    const numChainId = Number(chainId)
+
+    // Use type assertion to tell TypeScript these are valid chain IDs
+    if (numChainId === CHAIN_IDS.BASE_MAINNET) {
+      switchChain({ chainId: CHAIN_IDS.BASE_MAINNET as 84532 })
+    } else if (numChainId === CHAIN_IDS.BASE_SEPOLIA) {
+      switchChain({ chainId: CHAIN_IDS.BASE_SEPOLIA })
+    }
+  }
+
+  // Get the available tokens based on current chain
+  const getAvailableTokens = () => {
+    if (!chain?.id) return DEFAULT_TOKENS;
+
+    // Check if the chain ID exists in our TOKEN_ADDRESSES
+    return Object.prototype.hasOwnProperty.call(TOKEN_ADDRESSES, chain.id.toString())
+      ? TOKEN_ADDRESSES[chain.id as keyof typeof TOKEN_ADDRESSES]
+      : DEFAULT_TOKENS;
+  }
+
   if (linkCreated) {
     return <LinkCreatedView link={generatedLink} onBack={resetForm} />
   }
+
+  const availableTokens = getAvailableTokens();
 
   return (
     <Card className="border-none shadow-md">
       <CardContent className="p-6">
         <div className="mb-6 flex items-center justify-between">
           <h2 className="text-lg font-medium">Wallet</h2>
-          {isConnected && address ? (
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2 rounded-full bg-green-100 px-3 py-1 text-sm text-green-800">
-                <Wallet className="h-4 w-4" />
-                <span className="max-w-[120px] truncate">{address}</span>
-              </div>
-              <Button 
-                onClick={handleDisconnect} 
-                variant="ghost" 
-                size="sm"
-                className="text-red-500 hover:text-red-600 hover:bg-red-50"
+          <div className="flex items-center gap-2">
+            {isConnected && (
+              <Select
+                value={chain?.id?.toString()}
+                onValueChange={handleNetworkChange}
               >
-                <LogOut className="h-4 w-4" />
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue placeholder="Select Network" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={CHAIN_IDS.BASE_MAINNET.toString()}>
+                    Base Mainnet
+                  </SelectItem>
+                  <SelectItem value={CHAIN_IDS.BASE_SEPOLIA.toString()}>
+                    Base Sepolia
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+            {isConnected && address ? (
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 rounded-full bg-green-100 px-3 py-1 text-sm text-green-800">
+                  <Wallet className="h-4 w-4" />
+                  <span className="max-w-[120px] truncate">{address}</span>
+                </div>
+                <Button onClick={handleDisconnect} variant="ghost" size="sm">
+                  <LogOut className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : (
+              <Button onClick={connectWallet} variant="outline" size="sm">
+                Connect
               </Button>
-            </div>
-          ) : (
-            <Button onClick={connectWallet} variant="outline" size="sm">
-              Connect
-            </Button>
-          )}
+            )}
+          </div>
         </div>
 
         <div className="space-y-4">
@@ -186,9 +271,30 @@ export default function SenderUI() {
                 <SelectValue placeholder="Select token" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="eth">ETH</SelectItem>
-                <SelectItem value="usdc">USDC</SelectItem>
-                <SelectItem value="usdt">USDT</SelectItem>
+                {Object.keys(availableTokens).map((token) => {
+                  const tokenKey = token as TokenType
+                  const tokenAddress = availableTokens[tokenKey]
+                  const { data: balance } = useBalance({
+                    address,
+                    token: tokenKey === 'eth' ? undefined : tokenAddress,
+                    chainId: chain?.id,
+                  })
+
+                  const formattedBalance = balance ?
+                    (tokenKey === 'eth' ?
+                      formatEther(balance.value) :
+                      formatUnits(balance.value, TOKEN_DECIMALS[tokenKey])
+                    ) : '0'
+
+                  return (
+                    <SelectItem key={token} value={token}>
+                      <div className="flex justify-between w-full">
+                        <span className="uppercase">{token}</span>
+                        <span className="text-gray-500">{Number(formattedBalance).toFixed(4)}</span>
+                      </div>
+                    </SelectItem>
+                  )
+                })}
                 <SelectItem value="nft">NFT</SelectItem>
               </SelectContent>
             </Select>
