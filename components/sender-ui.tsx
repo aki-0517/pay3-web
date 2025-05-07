@@ -13,6 +13,8 @@ import { cbWalletConnector } from "@/wagmi"
 import type { Hex } from "viem"
 import { formatEther, formatUnits } from 'viem'
 import { base, baseSepolia } from 'wagmi/chains'
+import { QRCodeSVG } from 'qrcode.react'
+import { nanoid } from 'nanoid'
 
 // トークンのコントラクトアドレスを定義
 const TOKEN_ADDRESSES = {
@@ -172,8 +174,10 @@ export default function SenderUI() {
   }
 
   const createLink = () => {
-    const mockLink = "https://crypto.link/s/abc123"
-    setGeneratedLink(mockLink)
+    const linkId = nanoid(8) // 8文字のランダムなIDを生成
+    const baseUrl = window.location.origin
+    const receiveLink = `${baseUrl}/receive/${linkId}`
+    setGeneratedLink(receiveLink)
     setLinkCreated(true)
   }
 
@@ -215,6 +219,38 @@ export default function SenderUI() {
       : DEFAULT_TOKENS;
   }
 
+  // 各トークンのbalanceを個別にフックで取得
+  const ethBalance = useBalance({
+    address,
+    chainId: chain?.id,
+  })
+
+  const usdcBalance = useBalance({
+    address,
+    token: getAvailableTokens().usdc,
+    chainId: chain?.id,
+  })
+
+  const usdtBalance = useBalance({
+    address,
+    token: getAvailableTokens().usdt,
+    chainId: chain?.id,
+  })
+
+  // トークンごとのバランスを取得する関数
+  const getTokenBalance = (tokenKey: TokenType) => {
+    switch (tokenKey) {
+      case 'eth':
+        return ethBalance.data ? formatEther(ethBalance.data.value) : '0'
+      case 'usdc':
+        return usdcBalance.data ? formatUnits(usdcBalance.data.value, TOKEN_DECIMALS.usdc) : '0'
+      case 'usdt':
+        return usdtBalance.data ? formatUnits(usdtBalance.data.value, TOKEN_DECIMALS.usdt) : '0'
+      default:
+        return '0'
+    }
+  }
+
   if (linkCreated) {
     return <LinkCreatedView link={generatedLink} onBack={resetForm} />
   }
@@ -225,7 +261,7 @@ export default function SenderUI() {
     <Card className="border-none shadow-md">
       <CardContent className="p-6">
         <div className="mb-6 flex items-center justify-between">
-          <h2 className="text-lg font-medium">Wallet</h2>
+          <h2 className="text-lg font-medium"></h2>
           <div className="flex items-center gap-2">
             {isConnected && (
               <Select
@@ -273,24 +309,13 @@ export default function SenderUI() {
               <SelectContent>
                 {Object.keys(availableTokens).map((token) => {
                   const tokenKey = token as TokenType
-                  const tokenAddress = availableTokens[tokenKey]
-                  const { data: balance } = useBalance({
-                    address,
-                    token: tokenKey === 'eth' ? undefined : tokenAddress,
-                    chainId: chain?.id,
-                  })
-
-                  const formattedBalance = balance ?
-                    (tokenKey === 'eth' ?
-                      formatEther(balance.value) :
-                      formatUnits(balance.value, TOKEN_DECIMALS[tokenKey])
-                    ) : '0'
+                  const balance = getTokenBalance(tokenKey)
 
                   return (
                     <SelectItem key={token} value={token}>
                       <div className="flex justify-between w-full">
                         <span className="uppercase">{token}</span>
-                        <span className="text-gray-500">{Number(formattedBalance).toFixed(4)}</span>
+                        <span className="text-gray-500">{Number(balance).toFixed(4)}</span>
                       </div>
                     </SelectItem>
                   )
