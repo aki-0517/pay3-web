@@ -7,26 +7,28 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input"
 import { Wallet, Plus, LogOut } from "lucide-react"
 import LinkCreatedView from "@/components/link-created-view"
-import { useConnect, useAccount, usePublicClient, useSignMessage, useDisconnect, useBalance, useSwitchChain } from "wagmi"
+import { useConnect, useAccount, usePublicClient, useSignMessage, useDisconnect, useBalance, useSwitchChain, useWriteContract, useReadContract, useWaitForTransactionReceipt, useWatchPendingTransactions } from "wagmi"
 import { SiweMessage, generateNonce } from "siwe"
 import { cbWalletConnector } from "@/wagmi"
 import type { Hex } from "viem"
-import { formatEther, formatUnits } from 'viem'
+import { formatEther, formatUnits, parseEther, parseUnits, decodeEventLog } from 'viem'
 import { base, baseSepolia } from 'wagmi/chains'
 import { QRCodeSVG } from 'qrcode.react'
 import { nanoid } from 'nanoid'
+import { useRouter } from 'next/navigation'
+import { convertStringToLinkId } from '@/lib/link-utils'
 
-// トークンのコントラクトアドレスを定義
+// トークンのコントラクトアドレスを環境変数から定義
 const TOKEN_ADDRESSES = {
   [base.id]: {
     eth: undefined,
-    usdc: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48' as const,
-    usdt: '0xdAC17F958D2ee523a2206206994597C13D831ec7' as const,
+    usdc: process.env.NEXT_PUBLIC_USDC_ADDRESS_MAINNET as `0x${string}` | undefined,
+    usdt: process.env.NEXT_PUBLIC_USDT_ADDRESS_MAINNET as `0x${string}` | undefined,
   },
   [baseSepolia.id]: {
     eth: undefined,
-    usdc: '0x036CbD53842c5426634e7929541eC2318f3dCF7e' as const, // Sepoliaのアドレス
-    usdt: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238' as const, // Sepoliaのアドレス
+    usdc: process.env.NEXT_PUBLIC_USDC_ADDRESS_SEPOLIA as `0x${string}` | undefined,
+    usdt: process.env.NEXT_PUBLIC_USDT_ADDRESS_SEPOLIA as `0x${string}` | undefined,
   },
 } as const satisfies Record<string, Record<string, `0x${string}` | undefined>>
 
@@ -59,6 +61,87 @@ const CHAIN_NAMES = {
   [CHAIN_IDS.BASE_SEPOLIA]: 'Base Sepolia',
 } as const
 
+// LinkCreatorコントラクトのアドレス（環境変数から読み込み）
+const LINK_CREATOR_ADDRESS = {
+  [CHAIN_IDS.BASE_MAINNET]: process.env.NEXT_PUBLIC_LINK_CREATOR_ADDRESS_MAINNET || "0x...", 
+  [CHAIN_IDS.BASE_SEPOLIA]: process.env.NEXT_PUBLIC_LINK_CREATOR_ADDRESS_SEPOLIA || "0x..."
+} as const
+
+// LinkCreator ABIの定義
+const LINK_CREATOR_ABI = [
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "tokenAddress",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "expirationDuration",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes",
+        "name": "claimData",
+        "type": "bytes"
+      }
+    ],
+    "name": "createLink",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "linkId",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "linkId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "creator",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "tokenAddress",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "expiration",
+        "type": "uint256"
+      }
+    ],
+    "name": "LinkCreated",
+    "type": "event"
+  }
+] as const
+
 export default function SenderUI() {
   const [selectedToken, setSelectedToken] = useState("")
   const [amount, setAmount] = useState("")
@@ -68,10 +151,18 @@ export default function SenderUI() {
   const [signature, setSignature] = useState<Hex | undefined>(undefined)
   const [message, setMessage] = useState<SiweMessage | undefined>(undefined)
   const [valid, setValid] = useState<boolean | undefined>(undefined)
+  const [isCreatingLink, setIsCreatingLink] = useState(false)
+  const [txHash, setTxHash] = useState<`0x${string}` | undefined>(undefined)
+  const [linkId, setLinkId] = useState<string | undefined>(undefined)
+  const [expirationDuration, setExpirationDuration] = useState("86400") // デフォルト24時間 (秒)
+  const [error, setError] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
 
   const { address, isConnected, chain } = useAccount()
   const { disconnect } = useDisconnect()
   const { switchChain } = useSwitchChain()
+  const router = useRouter()
+  const client = usePublicClient()
 
   const { connect } = useConnect({
     mutation: {
@@ -108,8 +199,6 @@ export default function SenderUI() {
       },
     },
   })
-
-  const client = usePublicClient()
 
   const { signMessage } = useSignMessage({
     mutation: {
@@ -173,13 +262,114 @@ export default function SenderUI() {
     }
   }
 
-  const createLink = () => {
-    const linkId = nanoid(8) // 8文字のランダムなIDを生成
-    const baseUrl = window.location.origin
-    const receiveLink = `${baseUrl}/receive/${linkId}`
-    setGeneratedLink(receiveLink)
-    setLinkCreated(true)
-  }
+  // コントラクトの書き込み用フック
+  const { writeContractAsync, isPending, isError, error: writeContractError } = useWriteContract()
+  
+  // トランザクション待機フック
+  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
+    hash: txHash,
+  })
+
+  const createLink = async () => {
+    if (!isConnected || !address) return;
+    
+    setIsLoading(true);
+    setError('');
+    
+    try {
+      // 文字列IDをランダムに生成
+      const randomStrId = nanoid(10);
+      console.log(`Generated random ID: ${randomStrId}`);
+      
+      // 文字列IDをコントラクト用のlinkIdに変換
+      const linkId = await convertStringToLinkId(randomStrId);
+      console.log(`Converted to linkId: ${linkId}`);
+
+      // コントラクトのアドレスを取得
+      const contractAddress = LINK_CREATOR_ADDRESS[CHAIN_IDS.BASE_SEPOLIA] as `0x${string}`;
+      
+      // ETHの額をWeiに変換
+      const amountInWei = parseUnits(amount, TOKEN_DECIMALS.eth);
+      
+      // 有効期限（秒）
+      const expiration = BigInt(expirationDuration);
+      
+      // カスタムデータ（空）
+      const claimData = '0x' as `0x${string}`;
+      
+      // ETHのトークンアドレスは0アドレス
+      const tokenAddress = '0x0000000000000000000000000000000000000000' as `0x${string}`;
+
+      // リンク作成トランザクションを送信
+      const hash = await writeContractAsync({
+        address: contractAddress,
+        abi: LINK_CREATOR_ABI,
+        functionName: 'createLink',
+        args: [tokenAddress, amountInWei, expiration, claimData],
+        chainId: CHAIN_IDS.BASE_SEPOLIA,
+        value: amountInWei // ETHを送金する場合
+      });
+      console.log(`Transaction hash: ${hash}`);
+
+      // トランザクションの完了を待機
+      const receipt = await client.waitForTransactionReceipt({ hash });
+      console.log('Transaction receipt:', receipt);
+
+      // 受信したイベントからリンクIDを取得
+      let actualLinkId = linkId; // デフォルトは生成したID
+      
+      try {
+        // receipt.logsからLinkCreatedイベントを探す
+        for (const log of receipt.logs) {
+          try {
+            const decodedLog = decodeEventLog({
+              abi: LINK_CREATOR_ABI,
+              data: log.data,
+              topics: log.topics
+            });
+            
+            if (decodedLog.eventName === 'LinkCreated' && decodedLog.args.linkId) {
+              actualLinkId = decodedLog.args.linkId;
+              console.log(`Extracted linkId from event: ${actualLinkId}`);
+              break;
+            }
+          } catch (err) {
+            // このログは関連するイベントでない可能性があるため、エラーを無視
+            continue;
+          }
+        }
+      } catch (eventError) {
+        console.error('Failed to decode event, falling back to generated linkId:', eventError);
+      }
+
+      // リンク情報をAPIに保存
+      const response = await fetch('/api/links/store', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          linkId: actualLinkId,
+          amount,
+          txHash: hash,
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to store link data');
+      }
+
+      // 作成完了後のリダイレクト
+      router.push(`/created?id=${encodeURIComponent(actualLinkId)}`);
+    } catch (error) {
+      console.error('Error creating link:', error);
+      setError(error instanceof Error ? error.message : 'Failed to create link');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const resetForm = () => {
     setLinkCreated(false)
@@ -251,8 +441,28 @@ export default function SenderUI() {
     }
   }
 
+  // 有効期限選択ドロップダウンの追加
+  const renderExpirationSelect = () => {
+    return (
+      <div>
+        <label className="mb-2 block text-sm font-medium">有効期限</label>
+        <Select value={expirationDuration} onValueChange={setExpirationDuration}>
+          <SelectTrigger>
+            <SelectValue placeholder="有効期限を選択" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="3600">1時間</SelectItem>
+            <SelectItem value="86400">24時間</SelectItem>
+            <SelectItem value="604800">1週間</SelectItem>
+            <SelectItem value="2592000">30日</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+    )
+  }
+
   if (linkCreated) {
-    return <LinkCreatedView link={generatedLink} onBack={resetForm} />
+    return <LinkCreatedView onBack={resetForm} />
   }
 
   const availableTokens = getAvailableTokens();
@@ -336,21 +546,43 @@ export default function SenderUI() {
               </div>
             </div>
           ) : (
-            <div>
-              <label className="mb-2 block text-sm font-medium">Amount</label>
-              <Input type="number" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
-            </div>
+            <>
+              <div>
+                <label className="mb-2 block text-sm font-medium">数量</label>
+                <Input 
+                  type="number" 
+                  placeholder="0.00" 
+                  value={amount} 
+                  onChange={(e) => setAmount(e.target.value)} 
+                />
+              </div>
+              
+              {/* 有効期限選択の追加 */}
+              {renderExpirationSelect()}
+            </>
           )}
 
           <Button
             className="mt-6 w-full bg-green-500 text-white hover:bg-green-600"
             size="lg"
             onClick={createLink}
-            disabled={!isConnected || !selectedToken || (selectedToken !== "nft" && !amount)}
+            disabled={
+              !isConnected || 
+              !selectedToken || 
+              (selectedToken !== "nft" && !amount) || 
+              isCreatingLink || 
+              isConfirming ||
+              isLoading
+            }
           >
-            Create Link
+            {isCreatingLink || isConfirming ? "処理中..." : "リンクを作成"}
           </Button>
         </div>
+
+        {/* エラー表示 */}
+        {isError && (
+          <p className="mt-4 text-red-600">エラーが発生しました: {error}</p>
+        )}
 
         {verifying ? (
           <p className="mt-4 text-yellow-600">検証中...</p>
