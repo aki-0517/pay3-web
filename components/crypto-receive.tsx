@@ -224,12 +224,31 @@ export default function CryptoReceive({ transactionId }: CryptoReceiveProps) {
           }
         }, 15000); // 15秒でタイムアウト
         
-        // APIからリンク情報を取得
-        const response = await fetch(`/api/links/${transactionId}`, {
-          signal: abortController.signal
-        });
+        // APIからリンク情報を取得（リトライロジックを追加）
+        let response: Response | undefined;
+        let retries = 0;
+        const maxRetries = 3;
+        
+        while (retries < maxRetries) {
+          try {
+            response = await fetch(`/api/links/${transactionId}`, {
+              signal: abortController.signal
+            });
+            break; // 成功したらループを抜ける
+          } catch (fetchErr) {
+            retries++;
+            if (retries >= maxRetries) throw fetchErr;
+            // 指数バックオフで待機
+            await new Promise(r => setTimeout(r, 1000 * Math.pow(2, retries)));
+          }
+        }
         
         clearTimeout(timeoutId);
+        
+        // レスポンスがない場合はエラー
+        if (!response) {
+          throw new Error('APIレスポンスが取得できませんでした');
+        }
         
         // 404ステータスでも明示的に処理する
         if (response.status === 404) {
@@ -244,6 +263,11 @@ export default function CryptoReceive({ transactionId }: CryptoReceiveProps) {
         const data = await response.json();
         
         if (!isMounted) return;
+        
+        // isFallbackフラグがある場合は警告を表示
+        if (data.isFallback) {
+          console.warn('フォールバックデータが使用されています。一部の機能が制限される可能性があります。');
+        }
         
         setLinkId(data.linkId as `0x${string}`);
         setTransaction({

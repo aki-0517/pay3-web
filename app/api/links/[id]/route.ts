@@ -129,9 +129,12 @@ export async function GET(
   try {
     // 診断用ログを追加
     const startTime = Date.now();
-    // 環境に応じたチェーンとコントラクトアドレスの選択
-    const chain = process.env.NODE_ENV === 'production' ? base : baseSepolia;
-    console.log(`使用チェーン: ${chain.name} (ID: ${chain.id})`);
+    
+    // 環境変数からチェーン情報を取得、または自動検出
+    // 明示的な環境変数がある場合はそれを使用
+    const isProduction = process.env.VERCEL_ENV === 'production' || process.env.NODE_ENV === 'production';
+    const chain = isProduction ? base : baseSepolia;
+    console.log(`使用チェーン: ${chain.name} (ID: ${chain.id}), 環境: ${isProduction ? '本番' : '開発'}`);
     
     const contractAddress = LINK_CREATOR_ADDRESS[chain.id];
     console.log(`コントラクトアドレス: ${contractAddress}`);
@@ -141,10 +144,11 @@ export async function GET(
       throw new Error("コントラクトアドレスが設定されていません");
     }
     
-    // RPCクライアントの作成 - 直接Alchemy URLを指定
-    const rpcUrl = process.env.NODE_ENV === 'production'
-      ? "https://base-mainnet.g.alchemy.com/v2/1FLCJZcmqo8JIllallfvmc3Vmh3eYfsO"
-      : "https://base-sepolia.g.alchemy.com/v2/1FLCJZcmqo8JIllallfvmc3Vmh3eYfsO";
+    // RPCクライアントの作成 - 環境変数を優先的に使用
+    const rpcUrl = isProduction
+      ? (process.env.NEXT_PUBLIC_ALCHEMY_RPC_URL_MAINNET || "https://base-mainnet.g.alchemy.com/v2/1FLCJZcmqo8JIllallfvmc3Vmh3eYfsO")
+      : (process.env.NEXT_PUBLIC_ALCHEMY_RPC_URL_SEPOLIA || "https://base-sepolia.g.alchemy.com/v2/1FLCJZcmqo8JIllallfvmc3Vmh3eYfsO");
+    
     console.log(`使用RPC URL: ${rpcUrl}`);
     
     const client = createPublicClient({
@@ -175,19 +179,18 @@ export async function GET(
         // マッピングからIDが見つかった場合はそれを使用
         linkId = mappedContractId as `0x${string}`;
         console.log(`マッピングされたlinkId使用: ${linkId}`);
-      } else if (!id.startsWith("0x")) {
-        console.log(`非16進数IDを変換: ${id}`);
-        
-        // リンクID変換ユーティリティを使用
-        linkId = await convertStringToLinkId(id);
-        
-        console.log(`ハッシュベースのlinkId: ${linkId}`);
-      } else {
+      } else if (id.startsWith("0x")) {
         // 既に0xで始まる場合は直接使用
         linkId = id as `0x${string}`;
+        console.log(`直接16進数linkId使用: ${linkId}`);
+      } else {
+        // それ以外の場合は変換
+        console.log(`非16進数IDを変換: ${id}`);
+        linkId = await convertStringToLinkId(id);
+        console.log(`ハッシュベースのlinkId: ${linkId}`);
       }
       
-      console.log(`変換後のlinkId: ${linkId}`);
+      console.log(`最終linkId: ${linkId}`);
     } catch (conversionError: any) {
       console.error(`ID変換エラー:`, conversionError);
       throw new Error(`ID変換エラー: ${conversionError?.message || '不明なエラー'}`);
@@ -209,7 +212,7 @@ export async function GET(
       if (linkData.linkId === '0x0000000000000000000000000000000000000000000000000000000000000000') {
         console.log(`リンクが見つかりません: ${id}`);
         return NextResponse.json(
-          { error: 'リンクが見つかりません' },
+          { error: 'リンクが見つかりません', message: 'このリンクは存在しないか、すでに利用されています' },
           { status: 404 }
         );
       }
@@ -247,8 +250,46 @@ export async function GET(
     } catch (contractError: any) {
       console.error(`コントラクト呼び出しエラー:`, contractError);
       
-      // リンクが存在しない場合は404エラーを返す - この部分を確実に返すように修正
-      if (contractError.message && contractError.message.includes("Link does not exist")) {
+      // 緊急フォールバック：Redisからデータを試みて取得
+      try {
+        console.log(`Redisからデータ取得を試みます: ${id}`);
+        const redisResponse = await fetch(`${req.nextUrl.origin}/api/links/store?id=${id}`);
+        if (redisResponse.ok) {
+          const redisData = await redisResponse.json();
+          if (redisData && Object.keys(redisData).length > 0) {
+            console.log(`Redis経由でデータ取得成功`);
+            
+            // 最小限のレスポンスデータを作成
+            const fallbackData = {
+              id,
+              linkId: redisData.linkId || id,
+              creator: redisData.creator || "0x0000000000000000000000000000000000000000",
+              tokenAddress: "0x0000000000000000000000000000000000000000",
+              amount: redisData.amount || "0",
+              token: "ETH",
+              expiration: 0,
+              claimer: "0x0000000000000000000000000000000000000000",
+              status: 0,
+              claimData: "0x",
+              createdAt: 0,
+              claimedAt: 0,
+              isNft: false,
+              isFallback: true // フォールバックであることを示すフラグ
+            };
+            
+            return NextResponse.json(fallbackData);
+          }
+        }
+      } catch (redisError) {
+        console.error(`Redisフォールバック取得エラー:`, redisError);
+      }
+      
+      // リンクが存在しない場合は404エラーを返す
+      if (contractError.message && (
+        contractError.message.includes("Link does not exist") || 
+        contractError.message.includes("not found") ||
+        contractError.message.includes("Invalid")
+      )) {
         return NextResponse.json(
           { error: 'リンクが見つかりません', message: 'このリンクは存在しないか、既に利用されています' },
           { status: 404 }
@@ -257,14 +298,13 @@ export async function GET(
       
       // その他のエラーは500エラーを返す
       console.error(`エラーメッセージ: ${contractError.message}`);
-      console.error(`エラースタック: ${contractError.stack}`);
       throw new Error(`コントラクト呼び出しエラー: ${contractError.message}`);
     }
   } catch (error: any) {
     console.error('リンク情報の取得に失敗しました:', error);
     console.error(`エラータイプ: ${error.name}`);
     console.error(`エラーメッセージ: ${error.message}`);
-    console.error(`エラースタック: ${error.stack}`);
+    
     return NextResponse.json(
       { error: error.message || 'リンク情報の取得に失敗しました', message: '処理中にエラーが発生しました' },
       { status: 500 }
