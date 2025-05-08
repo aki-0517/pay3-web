@@ -334,23 +334,10 @@ export default function CryptoReceive({ transactionId }: CryptoReceiveProps) {
 
   // handleNetworkChange関数を修正
   const handleNetworkChange = () => {
-    // 対応するチェーンのIDを使用
-    const targetChainId = process.env.NODE_ENV === 'production' 
-      ? 8453  // Base Mainnet ID
-      : 84532; // Base Sepolia ID
-    
+    // 常にBase Sepoliaを使用
     try {
-      // baseSepolia.id (84532) を基準として条件分岐
-      if (targetChainId === 84532) {
-        // Sepoliaへの切り替え
-        switchChain({ chainId: 84532 });
-      } else {
-        // Mainnetへの切り替えは型の問題を回避
-        switchChain({ 
-          // @ts-ignore - Mainnetの型互換性の問題を無視
-          chainId: 8453 
-        });
-      }
+      // Sepoliaへの切り替え
+      switchChain({ chainId: 84532 });
     } catch (err) {
       console.error('ネットワーク切り替えエラー:', err);
     }
@@ -616,9 +603,7 @@ export default function CryptoReceive({ transactionId }: CryptoReceiveProps) {
                 isClaiming || 
                 isCheckingClaimable || 
                 !chain?.id || 
-                (process.env.NODE_ENV === 'production' 
-                  ? !isMainnetChain(Number(chain.id)) 
-                  : !isSepoliaChain(Number(chain.id))) ||
+                !isSepoliaChain(Number(chain.id)) ||
                 isClaimable === false
               }
             >
