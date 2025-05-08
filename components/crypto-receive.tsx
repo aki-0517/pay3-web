@@ -19,6 +19,7 @@ import { cbWalletConnector } from "@/wagmi"
 import { base, baseSepolia } from 'wagmi/chains'
 import { formatEther, formatUnits } from 'viem'
 import { config } from "@/wagmi"
+import { usePaymaster } from "@/hooks/use-paymaster"
 
 // チェーンID定数の型をより明確に定義
 const CHAIN_IDS = {
@@ -194,7 +195,43 @@ export default function CryptoReceive({ transactionId }: CryptoReceiveProps) {
   const { address, isConnected, chain } = useAccount()
   const { connect } = useConnect()
   const { switchChain } = useSwitchChain()
-  const { writeContractAsync, isPending, isError, error: claimError } = useWriteContract()
+  
+  // 状態管理のためのstate
+  const [isPending, setIsPending] = useState(false)
+  const [writeError, setWriteError] = useState<Error | null>(null)
+
+  // PaymasterサポートとCapabilitiesを取得
+  const { capabilities, hasPaymasterSupport } = usePaymaster()
+  
+  // useWriteContractフックを使用
+  const { writeContract, isPending: isWritePending, isError: isWriteError, error: contractError } = useWriteContract({
+    mutation: {
+      async onSuccess(hash) {
+        // トランザクションハッシュをステートに保存
+        setTxHash(hash)
+        
+        // APIにクレイム状態を通知
+        try {
+          await fetch(`/api/links/${transactionId}/claim`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              address,
+              txHash: hash
+            })
+          })
+        } catch (apiErr) {
+          console.error("クレイム状態の通知に失敗:", apiErr)
+          // 非クリティカルなので続行
+        }
+      },
+      onError(error) {
+        setWriteError(error as Error)
+      }
+    }
+  })
 
   // トランザクション結果の監視
   const { isSuccess: isConfirmed } = useWaitForTransactionReceipt({
@@ -348,6 +385,8 @@ export default function CryptoReceive({ transactionId }: CryptoReceiveProps) {
     
     try {
       setIsClaiming(true)
+      setIsPending(true)
+      setWriteError(null)
       
       // コントラクトのアドレスを取得
       const contractAddress = LINK_CREATOR_ADDRESS[chain.id as keyof typeof LINK_CREATOR_ADDRESS]
@@ -368,38 +407,26 @@ export default function CryptoReceive({ transactionId }: CryptoReceiveProps) {
         throw new Error("このリンクは現在請求できません。既に受け取られたか、期限切れの可能性があります。")
       }
       
-      // トランザクションを送信
-      const hash = await writeContractAsync({
+      // Paymasterを使ってトランザクションを送信
+      await writeContract({
         address: contractAddress as `0x${string}`,
         abi: LINK_CREATOR_ABI,
         functionName: 'claimLink',
-        args: [linkId, address]
+        args: [linkId, address],
+        ...(hasPaymasterSupport ? { options: { capabilities } } : {})
       })
       
-      if (hash) {
-        setTxHash(hash)
-        // APIにクレイム状態を通知（オプション）
-        try {
-          await fetch(`/api/links/${transactionId}/claim`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              address,
-              txHash: hash
-            })
-          })
-        } catch (apiErr) {
-          console.error("クレイム状態の通知に失敗:", apiErr)
-          // 非クリティカルなので続行
-        }
-      }
+      // トランザクションは送信された（エラーがなかった）
+      console.log("トランザクション送信成功")
+      
+      // 注: txHashはコールバックで設定されるため、ここでは使用できない可能性がある
     } catch (err: any) {
       console.error("受け取りエラー:", err)
+      setWriteError(err)
       setError(err.message || "受け取り処理中にエラーが発生しました")
     } finally {
       setIsClaiming(false)
+      setIsPending(false)
     }
   }
 
@@ -592,6 +619,14 @@ export default function CryptoReceive({ transactionId }: CryptoReceiveProps) {
                     </div>
                   )
               )}
+              
+              {/* Paymasterサポート表示 */}
+              {hasPaymasterSupport && (
+                <div className="mt-3 text-sm text-green-600 flex items-center">
+                  <Check className="h-4 w-4 mr-1" />
+                  ガス代無料（スポンサー済み）
+                </div>
+              )}
             </div>
 
             <Button 
@@ -600,6 +635,7 @@ export default function CryptoReceive({ transactionId }: CryptoReceiveProps) {
               onClick={claimAsset}
               disabled={
                 isPending || 
+                isWritePending || 
                 isClaiming || 
                 isCheckingClaimable || 
                 !chain?.id || 
@@ -607,11 +643,13 @@ export default function CryptoReceive({ transactionId }: CryptoReceiveProps) {
                 isClaimable === false
               }
             >
-              {isPending || isClaiming ? "処理中..." : "受け取る"}
+              {isPending || isWritePending || isClaiming ? "処理中..." : "受け取る"}
             </Button>
 
             <div className="mt-2 text-center text-xs text-gray-500">
-              ガス代は不要です。当社が負担します。
+              {hasPaymasterSupport ? 
+                "ガス代は不要です。当社が負担します。" : 
+                "ガス代が必要です。ウォレットに十分なETHがあることを確認してください。"}
             </div>
             
             {/* クレイム可能かどうかのチェック結果 */}
@@ -620,8 +658,8 @@ export default function CryptoReceive({ transactionId }: CryptoReceiveProps) {
             )}
             
             {/* エラー表示 */}
-            {isError && (
-              <p className="mt-4 text-red-600">エラーが発生しました: {claimError?.message}</p>
+            {(isWriteError || writeError) && (
+              <p className="mt-4 text-red-600">エラーが発生しました: {contractError?.message || writeError?.message}</p>
             )}
           </>
         ) : (
