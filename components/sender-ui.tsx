@@ -17,6 +17,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import { nanoid } from 'nanoid'
 import { useRouter } from 'next/navigation'
 import { convertStringToLinkId } from '@/lib/link-utils'
+import { useLanguage, t } from "@/lib/i18n"
 
 // トークンのコントラクトアドレスを環境変数から定義
 const TOKEN_ADDRESSES = {
@@ -221,6 +222,7 @@ const ERC20_ABI = [
 ] as const;
 
 export default function SenderUI() {
+  const { language } = useLanguage();
   const [selectedToken, setSelectedToken] = useState("")
   const [amount, setAmount] = useState("")
   const [linkCreated, setLinkCreated] = useState(false)
@@ -641,16 +643,16 @@ export default function SenderUI() {
   const renderExpirationSelect = () => {
     return (
       <div>
-        <label className="mb-2 block text-sm font-medium">有効期限</label>
+        <label className="mb-2 block text-sm font-medium">{t('sender.expiration', language)}</label>
         <Select value={expirationDuration} onValueChange={setExpirationDuration}>
           <SelectTrigger>
-            <SelectValue placeholder="有効期限を選択" />
+            <SelectValue placeholder={t('sender.expirationPlaceholder', language)} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="3600">1時間</SelectItem>
-            <SelectItem value="86400">24時間</SelectItem>
-            <SelectItem value="604800">1週間</SelectItem>
-            <SelectItem value="2592000">30日</SelectItem>
+            <SelectItem value="3600">{t('sender.1hour', language)}</SelectItem>
+            <SelectItem value="86400">{t('sender.24hours', language)}</SelectItem>
+            <SelectItem value="604800">{t('sender.1week', language)}</SelectItem>
+            <SelectItem value="2592000">{t('sender.30days', language)}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -699,7 +701,7 @@ export default function SenderUI() {
               </div>
             ) : (
               <Button onClick={connectWallet} variant="outline" size="sm">
-                Connect
+                {t('common.connect', language)}
               </Button>
             )}
           </div>
@@ -707,10 +709,10 @@ export default function SenderUI() {
 
         <div className="space-y-4">
           <div>
-            <label className="mb-2 block text-sm font-medium">Select Token</label>
+            <label className="mb-2 block text-sm font-medium">{t('sender.selectToken', language)}</label>
             <Select value={selectedToken} onValueChange={setSelectedToken}>
               <SelectTrigger>
-                <SelectValue placeholder="Select token" />
+                <SelectValue placeholder={t('sender.selectToken', language)} />
               </SelectTrigger>
               <SelectContent>
                 {Object.keys(availableTokens).map((token) => {
@@ -733,25 +735,25 @@ export default function SenderUI() {
 
           {selectedToken === "nft" ? (
             <div>
-              <label className="mb-2 block text-sm font-medium">Select NFT</label>
+              <label className="mb-2 block text-sm font-medium">{t('sender.selectNFT', language)}</label>
               <div className="grid grid-cols-2 gap-2">
                 <div className="cursor-pointer rounded-lg border-2 border-dashed border-gray-300 p-4 text-center hover:border-green-500">
                   <Plus className="mx-auto h-8 w-8 text-gray-400" />
-                  <span className="mt-1 block text-xs text-gray-500">Select NFT</span>
+                  <span className="mt-1 block text-xs text-gray-500">{t('sender.selectNFT', language)}</span>
                 </div>
               </div>
             </div>
           ) : (
             <>
               <div>
-                <label className="mb-2 block text-sm font-medium">数量</label>
+                <label className="mb-2 block text-sm font-medium">{t('sender.amount', language)}</label>
                 <Input 
                   type="number" 
                   placeholder="0.00" 
                   value={amount} 
                   onChange={(e) => setAmount(e.target.value)} 
                 />
-                <p className="mt-1 text-xs text-gray-500">※送信時に0.5%の手数料が差し引かれます</p>
+                <p className="mt-1 text-xs text-gray-500">{t('sender.feeNote', language)}</p>
               </div>
               
               {/* 有効期限選択の追加 */}
@@ -772,7 +774,7 @@ export default function SenderUI() {
               isLoading
             }
           >
-            {isCreatingLink || isConfirming || isLoading ? "処理中..." : "リンクを作成"}
+            {isCreatingLink || isConfirming || isLoading ? t('sender.processing', language) : t('sender.createLink', language)}
           </Button>
         </div>
 
@@ -784,21 +786,20 @@ export default function SenderUI() {
         )}
 
         {verifying ? (
-          <p className="mt-4 text-yellow-600">検証中...</p>
+          <p className="mt-4 text-yellow-600">{t('sender.verifying', language)}</p>
         ) : (
           valid !== undefined && (
             <p className={`mt-4 ${valid ? "text-green-600" : "text-red-600"}`}>
-              検証結果: {valid ? "成功" : "失敗"}
+              {t('sender.verificationResult', language)} {valid ? t('sender.success', language) : t('sender.failure', language)}
             </p>
           )
         )}
 
         {process.env.NODE_ENV === 'development' && (
           <div className="mt-4 text-xs text-gray-500">
-            <p>接続状態: {isConnected ? "接続済み" : "未接続"}</p>
-            <p>アドレス: {address || "なし"}</p>
-            <p>署名あり: {!!signature}</p>
-            <p>メッセージあり: {!!message}</p>
+            <p>{t('sender.connectionStatus', language)} {isConnected ? t('sender.connected', language) : t('sender.notConnected', language)}</p>
+            <p>{t('sender.address', language)} {address || t('sender.none', language)}</p>
+            <p>Chain: {chain?.name || "none"}</p>
           </div>
         )}
       </CardContent>

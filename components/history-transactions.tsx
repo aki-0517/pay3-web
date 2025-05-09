@@ -13,6 +13,7 @@ import { useAccount } from "wagmi"
 import { readContract, writeContract } from "wagmi/actions"
 import { formatUnits } from "ethers"
 import { config } from "@/wagmi"
+import { useLanguage, t } from "@/lib/i18n"
 
 // LinkStatusの定義
 enum LinkStatus {
@@ -201,6 +202,7 @@ export default function HistoryTransactions() {
   const [selectedTx, setSelectedTx] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<string>("all")
   const [loading, setLoading] = useState(true)
+  const { language } = useLanguage()
 
   useEffect(() => {
     if (address) {
@@ -235,7 +237,7 @@ export default function HistoryTransactions() {
           // 返されたデータを適切な形式に変換
           const tokenAddress = linkData.tokenAddress.toLowerCase();
           const tokenInfo = TOKEN_SYMBOLS[tokenAddress] || {
-            symbol: "不明なトークン",
+            symbol: t('history.unknown', language),
             decimals: 18
           };
 
@@ -296,25 +298,25 @@ export default function HistoryTransactions() {
       case LinkStatus.Active:
         return (
           <Badge variant="outline" className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">
-            未請求
+            {language === 'en' ? 'Unclaimed' : '未請求'}
           </Badge>
         )
       case LinkStatus.Claimed:
         return (
           <Badge variant="outline" className="bg-green-100 text-green-800 hover:bg-green-100">
-            請求済み
+            {language === 'en' ? 'Claimed' : '請求済み'}
           </Badge>
         )
       case LinkStatus.Expired:
         return (
           <Badge variant="outline" className="bg-gray-100 text-gray-800 hover:bg-gray-100">
-            期限切れ
+            {language === 'en' ? 'Expired' : '期限切れ'}
           </Badge>
         )
       case LinkStatus.Canceled:
         return (
           <Badge variant="outline" className="bg-red-100 text-red-800 hover:bg-red-100">
-            キャンセル済み
+            {language === 'en' ? 'Canceled' : 'キャンセル済み'}
           </Badge>
         )
       default:
@@ -324,7 +326,7 @@ export default function HistoryTransactions() {
 
   const formatDate = (timestamp: number) => {
     const date = new Date(timestamp * 1000)
-    return date.toLocaleDateString('ja-JP') + " " + date.toLocaleTimeString('ja-JP', { hour: "2-digit", minute: "2-digit" })
+    return date.toLocaleDateString(language === 'en' ? 'en-US' : 'ja-JP') + " " + date.toLocaleTimeString(language === 'en' ? 'en-US' : 'ja-JP', { hour: "2-digit", minute: "2-digit" })
   }
 
   const copyToClipboard = (text: string) => {
@@ -375,17 +377,17 @@ export default function HistoryTransactions() {
         <CardContent className="p-4">
           <Tabs defaultValue={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="mb-4">
-              <TabsTrigger value="all">すべて</TabsTrigger>
-              <TabsTrigger value="active">未請求</TabsTrigger>
-              <TabsTrigger value="claimed">請求済み</TabsTrigger>
-              <TabsTrigger value="expired">期限切れ/キャンセル</TabsTrigger>
+              <TabsTrigger value="all">{t('history.filter.all', language)}</TabsTrigger>
+              <TabsTrigger value="active">{t('history.filter.active', language)}</TabsTrigger>
+              <TabsTrigger value="claimed">{t('history.filter.claimed', language)}</TabsTrigger>
+              <TabsTrigger value="expired">{t('history.filter.expired', language)}</TabsTrigger>
             </TabsList>
             
             <TabsContent value={activeTab}>
               {loading ? (
-                <div className="py-8 text-center text-gray-500">読み込み中...</div>
+                <div className="py-8 text-center text-gray-500">{t('common.loading', language)}</div>
               ) : filteredTransactions.length === 0 ? (
-                <div className="py-8 text-center text-gray-500">表示するトランザクションがありません</div>
+                <div className="py-8 text-center text-gray-500">{t('history.noTransactions', language)}</div>
               ) : (
                 <div className="space-y-4">
                   {filteredTransactions.map((tx) => (
@@ -417,7 +419,7 @@ export default function HistoryTransactions() {
                       <CollapsibleContent className="border-t bg-gray-50 p-4">
                         <div className="space-y-3">
                           <div>
-                            <div className="text-xs font-medium text-gray-500">リンク</div>
+                            <div className="text-xs font-medium text-gray-500">{t('history.link', language)}</div>
                             <div className="flex items-center gap-2">
                               <div className="truncate text-sm">{tx.link}</div>
                               <Button
@@ -432,13 +434,13 @@ export default function HistoryTransactions() {
                           </div>
 
                           <div>
-                            <div className="text-xs font-medium text-gray-500">期限</div>
+                            <div className="text-xs font-medium text-gray-500">{t('history.expiration', language)}</div>
                             <div className="text-sm">{formatDate(tx.expiration)}</div>
                           </div>
 
                           {tx.claimer && (
                             <div>
-                              <div className="text-xs font-medium text-gray-500">請求者</div>
+                              <div className="text-xs font-medium text-gray-500">{t('history.claimer', language)}</div>
                               <div className="flex items-center gap-2">
                                 <div className="truncate text-sm">{tx.claimer}</div>
                                 <Button
@@ -455,7 +457,7 @@ export default function HistoryTransactions() {
 
                           {tx.claimedAt > 0 && (
                             <div>
-                              <div className="text-xs font-medium text-gray-500">請求日時</div>
+                              <div className="text-xs font-medium text-gray-500">{t('history.claimedAt', language)}</div>
                               <div className="text-sm">{formatDate(tx.claimedAt)}</div>
                             </div>
                           )}
@@ -466,7 +468,7 @@ export default function HistoryTransactions() {
                             onClick={() => openDetails(tx.id)}
                             className="mt-2 w-full"
                           >
-                            詳細を見る
+                            {t('history.viewDetails', language)}
                           </Button>
 
                           {tx.status === LinkStatus.Active && (
@@ -477,7 +479,7 @@ export default function HistoryTransactions() {
                                 handleCancel(tx.id)
                               }}
                             >
-                              キャンセル
+                              {t('common.cancel', language)}
                             </Button>
                           )}
                         </div>
@@ -494,7 +496,7 @@ export default function HistoryTransactions() {
       <Dialog open={selectedTx !== null} onOpenChange={closeDetails}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>取引詳細</DialogTitle>
+            <DialogTitle>{t('history.details', language)}</DialogTitle>
           </DialogHeader>
 
           {selectedTx && (
@@ -508,7 +510,7 @@ export default function HistoryTransactions() {
                     <div className="rounded-lg bg-gray-50 p-4">
                       <div className="flex items-center justify-between">
                         <div className="min-w-0 max-w-[70%]">
-                          <h3 className="text-sm font-medium text-gray-500">トークン</h3>
+                          <h3 className="text-sm font-medium text-gray-500">{t('history.token', language)}</h3>
                           <div className="font-medium truncate">
                             {tx.tokenSymbol} {tx.amount}
                           </div>
@@ -518,17 +520,17 @@ export default function HistoryTransactions() {
                         </div>
                       </div>
                       <div className="mt-2">
-                        <h3 className="text-sm font-medium text-gray-500">作成日時</h3>
+                        <h3 className="text-sm font-medium text-gray-500">{t('history.createdAt', language)}</h3>
                         <div className="text-sm">{formatDate(tx.createdAt)}</div>
                       </div>
                       <div className="mt-2">
-                        <h3 className="text-sm font-medium text-gray-500">期限</h3>
+                        <h3 className="text-sm font-medium text-gray-500">{t('history.expiration', language)}</h3>
                         <div className="text-sm">{formatDate(tx.expiration)}</div>
                       </div>
                     </div>
 
                     <div>
-                      <h3 className="text-sm font-medium text-gray-500">リンク</h3>
+                      <h3 className="text-sm font-medium text-gray-500">{t('history.link', language)}</h3>
                       <div className="mt-1 flex items-center gap-2 rounded-md border bg-gray-50 p-2">
                         <div className="truncate text-sm flex-1 min-w-0">{tx.link}</div>
                         <Button
@@ -543,7 +545,7 @@ export default function HistoryTransactions() {
                     </div>
 
                     <div>
-                      <h3 className="text-sm font-medium text-gray-500">QRコード</h3>
+                      <h3 className="text-sm font-medium text-gray-500">{t('history.qrCode', language)}</h3>
                       <div className="mt-1 flex justify-center rounded-md border bg-white p-4">
                         <QRCode value={tx.link} size={180} />
                       </div>
@@ -551,7 +553,7 @@ export default function HistoryTransactions() {
 
                     {tx.status === LinkStatus.Claimed && (
                       <div>
-                        <h3 className="text-sm font-medium text-gray-500">請求者</h3>
+                        <h3 className="text-sm font-medium text-gray-500">{t('history.claimer', language)}</h3>
                         <div className="mt-1 flex items-center gap-2 rounded-md border bg-gray-50 p-2">
                           <div className="truncate text-sm flex-1 min-w-0">{tx.claimer}</div>
                           <Button
@@ -564,7 +566,7 @@ export default function HistoryTransactions() {
                           </Button>
                         </div>
                         <div className="mt-2">
-                          <h3 className="text-sm font-medium text-gray-500">請求日時</h3>
+                          <h3 className="text-sm font-medium text-gray-500">{t('history.claimedAt', language)}</h3>
                           <div className="text-sm">{formatDate(tx.claimedAt)}</div>
                         </div>
                       </div>
@@ -578,7 +580,7 @@ export default function HistoryTransactions() {
                           closeDetails()
                         }}
                       >
-                        キャンセル
+                        {t('common.cancel', language)}
                       </Button>
                     )}
                   </>

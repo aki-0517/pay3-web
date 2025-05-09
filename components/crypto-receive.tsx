@@ -20,6 +20,7 @@ import { base, baseSepolia } from 'wagmi/chains'
 import { formatEther, formatUnits } from 'viem'
 import { config } from "@/wagmi"
 import { usePaymaster } from "@/hooks/use-paymaster"
+import { useLanguage, t } from "@/lib/i18n"
 
 // チェーンID定数の型をより明確に定義
 const CHAIN_IDS = {
@@ -404,7 +405,7 @@ export default function CryptoReceive({ transactionId }: CryptoReceiveProps) {
       })
       
       if (!isClaimable) {
-        throw new Error("このリンクは現在請求できません。既に受け取られたか、期限切れの可能性があります。")
+        throw new Error(t('crypto.notClaimable', language))
       }
       
       // Paymasterを使ってトランザクションを送信
@@ -430,6 +431,8 @@ export default function CryptoReceive({ transactionId }: CryptoReceiveProps) {
     }
   }
 
+  const { language } = useLanguage();
+
   if (loading) {
     return (
       <Card className="border-none shadow-md">
@@ -444,7 +447,7 @@ export default function CryptoReceive({ transactionId }: CryptoReceiveProps) {
     return (
       <Card className="border-none shadow-md">
         <CardContent className="p-6 text-center">
-          <h2 className="text-xl font-medium text-red-500">エラー</h2>
+          <h2 className="text-xl font-medium text-red-500">{t('crypto.loadingError', language)}</h2>
           <p className="mt-2 text-gray-600">{error}</p>
         </CardContent>
       </Card>
@@ -455,8 +458,8 @@ export default function CryptoReceive({ transactionId }: CryptoReceiveProps) {
     return (
       <Card className="border-none shadow-md">
         <CardContent className="p-6 text-center">
-          <h2 className="text-xl font-medium">リンクが見つかりません</h2>
-          <p className="mt-2 text-gray-600">このリンクは有効期限切れか無効です。</p>
+          <h2 className="text-xl font-medium">{t('crypto.notFound', language)}</h2>
+          <p className="mt-2 text-gray-600">{t('crypto.notFoundDesc', language)}</p>
         </CardContent>
       </Card>
     )
@@ -464,15 +467,28 @@ export default function CryptoReceive({ transactionId }: CryptoReceiveProps) {
 
   // リンクが既に請求済みか期限切れの場合
   if (transaction.status !== 0 && !assetClaimed) { // 0 = Active
+    let statusMessage = '';
+    
+    switch(transaction.status) {
+      case 1: 
+        statusMessage = t('crypto.alreadyClaimed', language); 
+        break;
+      case 2: 
+        statusMessage = t('crypto.expired', language); 
+        break;
+      case 3: 
+        statusMessage = t('crypto.canceled', language); 
+        break;
+      default: 
+        statusMessage = t('crypto.invalidStatus', language);
+    }
+    
     return (
       <Card className="border-none shadow-md">
         <CardContent className="p-6 text-center">
-          <h2 className="text-xl font-medium">このリンクは利用できません</h2>
+          <h2 className="text-xl font-medium">{t('crypto.linkUnavailable', language)}</h2>
           <p className="mt-2 text-gray-600">
-            {transaction.status === 1 ? "既に受け取り済みです。" : 
-             transaction.status === 2 ? "有効期限が切れています。" : 
-             transaction.status === 3 ? "送金者によりキャンセルされました。" : 
-             "ステータスが無効です。"}
+            {statusMessage}
           </p>
         </CardContent>
       </Card>
@@ -485,7 +501,7 @@ export default function CryptoReceive({ transactionId }: CryptoReceiveProps) {
         {!isConnected ? (
           <>
             <div className="mb-6 text-center">
-              <h2 className="mb-2 text-xl font-medium">{transaction.senderName}さんから暗号資産が届いています</h2>
+              <h2 className="mb-2 text-xl font-medium">{t('crypto.receivePrompt', language).replace('{sender}', transaction.senderName)}</h2>
               <div className="mt-4 rounded-lg bg-gray-50 p-4 text-center">
                 <div className="text-2xl font-bold">
                   {transaction.isNft ? (
@@ -504,7 +520,7 @@ export default function CryptoReceive({ transactionId }: CryptoReceiveProps) {
                   )}
                 </div>
               </div>
-              <p className="mt-4 text-gray-600">ウォレットを接続して受け取ってください</p>
+              <p className="mt-4 text-gray-600">{t('crypto.connectPrompt', language)}</p>
             </div>
 
             <div className="absolute right-4 top-4">
@@ -516,33 +532,33 @@ export default function CryptoReceive({ transactionId }: CryptoReceiveProps) {
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
-                    <DialogTitle>スマートウォレットについて</DialogTitle>
+                    <DialogTitle>{t('receiver.aboutTitle', language)}</DialogTitle>
                     <DialogDescription>
-                      Coinbaseスマートウォレットは、暗号資産を安全に保管・管理できる自己管理型ウォレットです。シードフレーズ不要で、パスキーや生体認証で簡単に利用できます。
+                      {t('receiver.aboutDescription', language)}
                     </DialogDescription>
                   </DialogHeader>
                   <div className="mt-4 space-y-4">
                     <div className="flex items-start gap-2">
                       <Check className="mt-0.5 h-5 w-5 text-green-500" />
                       <div>
-                        <h4 className="font-medium">簡単操作</h4>
+                        <h4 className="font-medium">{t('receiver.feature1Title', language)}</h4>
                         <p className="text-sm text-gray-500">
-                          シードフレーズの記憶不要、デバイスの生体認証だけで利用可能
+                          {t('receiver.feature1Desc', language)}
                         </p>
                       </div>
                     </div>
                     <div className="flex items-start gap-2">
                       <Check className="mt-0.5 h-5 w-5 text-green-500" />
                       <div>
-                        <h4 className="font-medium">安全性</h4>
-                        <p className="text-sm text-gray-500">鍵はデバイスに安全に保存されます</p>
+                        <h4 className="font-medium">{t('receiver.feature2Title', language)}</h4>
+                        <p className="text-sm text-gray-500">{t('receiver.feature2Desc', language)}</p>
                       </div>
                     </div>
                     <div className="flex items-start gap-2">
                       <Check className="mt-0.5 h-5 w-5 text-green-500" />
                       <div>
-                        <h4 className="font-medium">ガス代無料</h4>
-                        <p className="text-sm text-gray-500">取引のガス代は当社が負担します</p>
+                        <h4 className="font-medium">{t('receiver.feature3Title', language)}</h4>
+                        <p className="text-sm text-gray-500">{t('receiver.feature3Desc', language)}</p>
                       </div>
                     </div>
                   </div>
@@ -551,27 +567,27 @@ export default function CryptoReceive({ transactionId }: CryptoReceiveProps) {
             </div>
 
             <Button className="mt-4 w-full bg-blue-500 text-white hover:bg-blue-600" size="lg" onClick={connectWallet}>
-              Coinbaseスマートウォレットで接続
+              {t('receiver.connectButton', language)}
             </Button>
 
             <div className="mt-4 text-center text-sm text-gray-500">
-              暗号資産が初めての方も安心。数秒でウォレットを作成できます。
+              {t('receiver.newUserPrompt', language)}
             </div>
           </>
         ) : !assetClaimed ? (
           <>
             <div className="mb-6">
               <div className="flex items-center justify-between">
-                <h2 className="text-lg font-medium">ウォレット接続完了</h2>
+                <h2 className="text-lg font-medium">{t('receiver.walletConnected', language)}</h2>
                 <Badge variant="outline" className="bg-green-100 text-green-800">
                   <Wallet className="mr-1 h-3 w-3" />
-                  接続済み
+                  {t('receiver.connected', language)}
                 </Badge>
               </div>
             </div>
 
             <div className="mb-6 rounded-lg bg-gray-50 p-4">
-              <h3 className="mb-2 text-sm font-medium text-gray-500">受け取り内容</h3>
+              <h3 className="mb-2 text-sm font-medium text-gray-500">{t('crypto.receiveSummary', language)}</h3>
               <div className="flex items-center justify-between">
                 <div className="text-2xl font-bold">
                   {transaction.isNft ? (
@@ -591,30 +607,35 @@ export default function CryptoReceive({ transactionId }: CryptoReceiveProps) {
                 </div>
               </div>
               <div className="mt-1 text-sm text-gray-500">
-                送金者: {transaction.senderName} ({transaction.sender.substring(0, 6)}...{transaction.sender.substring(transaction.sender.length-4)})
+                {t('crypto.sender', language)
+                  .replace('{name}', transaction.senderName)
+                  .replace('{address}', 
+                    `${transaction.sender.substring(0, 6)}...${transaction.sender.substring(transaction.sender.length-4)}`
+                  )
+                }
               </div>
               {chain?.id && (
                 process.env.NODE_ENV === 'production' ? 
                   !isMainnetChain(Number(chain.id)) && (
                     <div className="mt-3">
-                      <p className="text-sm text-amber-600">ネットワークを変更してください</p>
+                      <p className="text-sm text-amber-600">{t('crypto.networkChange', language)}</p>
                       <Button 
                         className="mt-1 w-full bg-amber-500 text-white hover:bg-amber-600" 
                         size="sm"
                         onClick={handleNetworkChange}
                       >
-                        Base Mainnetに切り替え
+                        {t('crypto.switchToMainnet', language)}
                       </Button>
                     </div>
                   ) : !isSepoliaChain(Number(chain.id)) && (
                     <div className="mt-3">
-                      <p className="text-sm text-amber-600">ネットワークを変更してください</p>
+                      <p className="text-sm text-amber-600">{t('crypto.networkChange', language)}</p>
                       <Button 
                         className="mt-1 w-full bg-amber-500 text-white hover:bg-amber-600" 
                         size="sm"
                         onClick={handleNetworkChange}
                       >
-                        Base Sepoliaに切り替え
+                        {t('crypto.switchToSepolia', language)}
                       </Button>
                     </div>
                   )
@@ -624,7 +645,7 @@ export default function CryptoReceive({ transactionId }: CryptoReceiveProps) {
               {hasPaymasterSupport && (
                 <div className="mt-3 text-sm text-green-600 flex items-center">
                   <Check className="h-4 w-4 mr-1" />
-                  ガス代無料（スポンサー済み）
+                  {t('crypto.gasSponsored', language)}
                 </div>
               )}
             </div>
@@ -643,23 +664,25 @@ export default function CryptoReceive({ transactionId }: CryptoReceiveProps) {
                 isClaimable === false
               }
             >
-              {isPending || isWritePending || isClaiming ? "処理中..." : "受け取る"}
+              {isPending || isWritePending || isClaiming ? t('crypto.processing', language) : t('crypto.claim', language)}
             </Button>
 
             <div className="mt-2 text-center text-xs text-gray-500">
               {hasPaymasterSupport ? 
-                "ガス代は不要です。0.5%の手数料が差し引かれます" : 
-                "ガス代が必要です。ウォレットに十分なETHがあることを確認してください。"}
+                t('crypto.feeNote', language) : 
+                t('crypto.gasFeeNote', language)}
             </div>
             
             {/* クレイム可能かどうかのチェック結果 */}
             {isClaimable === false && !isCheckingClaimable && (
-              <p className="mt-4 text-red-600">このリンクは現在請求できません。既に受け取られたか、期限切れの可能性があります。</p>
+              <p className="mt-4 text-red-600">{t('crypto.notClaimable', language)}</p>
             )}
             
             {/* エラー表示 */}
             {(isWriteError || writeError) && (
-              <p className="mt-4 text-red-600">エラーが発生しました: {contractError?.message || writeError?.message}</p>
+              <p className="mt-4 text-red-600">
+                {t('crypto.errorOccurred', language).replace('{message}', contractError?.message || writeError?.message || '')}
+              </p>
             )}
           </>
         ) : (
@@ -668,15 +691,16 @@ export default function CryptoReceive({ transactionId }: CryptoReceiveProps) {
               <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
                 <Check className="h-8 w-8 text-green-500" />
               </div>
-              <h2 className="text-xl font-medium">受け取り完了!</h2>
+              <h2 className="text-xl font-medium">{t('crypto.claimComplete', language)}</h2>
               <p className="mt-2 text-center text-gray-600">
-                {transaction.isNft ? transaction.token : `${transaction.amount} ${transaction.token}`}がウォレットに追加されました
+                {transaction.isNft ? transaction.token : `${transaction.amount} ${transaction.token}`}
+                {t('crypto.addedToWallet', language)}
               </p>
             </div>
 
             <div className="space-y-4">
               <Button className="w-full" variant="outline">
-                ウォレットで確認
+                {t('crypto.checkWallet', language)}
               </Button>
 
               {txHash && (
@@ -685,7 +709,7 @@ export default function CryptoReceive({ transactionId }: CryptoReceiveProps) {
                   variant="outline"
                   onClick={() => window.open(`https://sepolia.basescan.org/tx/${txHash}`, '_blank')}
                 >
-                  トランザクションを確認
+                  {t('crypto.checkTransaction', language)}
                 </Button>
               )}
 
@@ -693,7 +717,7 @@ export default function CryptoReceive({ transactionId }: CryptoReceiveProps) {
                 className="w-full bg-green-500 text-white hover:bg-green-600"
                 onClick={() => window.location.href = '/'}
               >
-                完了
+                {t('crypto.finish', language)}
               </Button>
             </div>
           </>

@@ -8,8 +8,10 @@ import { useSearchParams } from "next/navigation"
 import { formatLinkId } from "@/lib/link-utils"
 import { toast } from "@/components/ui/use-toast"
 import { Toaster } from "@/components/ui/toaster"
+import { useLanguage, t } from "@/lib/i18n"
 
 export default function LinkCreatedView({ onBack }: { onBack: () => void }) {
+  const { language } = useLanguage();
   const [copied, setCopied] = useState(false)
   const [shareLinkUrl, setShareLinkUrl] = useState<string>("")
   const searchParams = useSearchParams()
@@ -35,7 +37,10 @@ export default function LinkCreatedView({ onBack }: { onBack: () => void }) {
   // リンクIDの表示用フォーマット（短縮表示）
   const displayLinkId = linkId ? 
     (linkId.startsWith('0x') ? formatLinkId(linkId as `0x${string}`) : linkId) 
-    : '読み込み中...'
+    : t('link.loadingId', language)
+
+  // 共有リンク用の説明テキスト
+  const shareDescription = t('link.shareDescription', language).replace('{id}', displayLinkId);
 
   return (
     <Card className="border-none shadow-md">
@@ -48,11 +53,11 @@ export default function LinkCreatedView({ onBack }: { onBack: () => void }) {
             onClick={onBack}
           >
             <ChevronLeft className="mr-1 h-4 w-4" />
-            戻る
+            {t('common.back', language)}
           </Button>
-          <h2 className="text-lg font-medium">リンク作成完了！</h2>
+          <h2 className="text-lg font-medium">{t('link.created', language)}</h2>
           <p className="mt-1 text-sm text-gray-500">
-            このリンクを共有して、資金を送ります（ID: {displayLinkId}）
+            {shareDescription}
           </p>
         </div>
 
@@ -73,20 +78,20 @@ export default function LinkCreatedView({ onBack }: { onBack: () => void }) {
                   onClick={copyToClipboard}
                   className="ml-2 shrink-0"
                 >
-                  {copied ? "コピー済み" : <Copy className="h-4 w-4" />}
+                  {copied ? t('common.copied', language) : <Copy className="h-4 w-4" />}
                 </Button>
               </div>
             </div>
 
             <div className="mt-4">
               <Button className="w-full" onClick={onBack}>
-                別のリンクを作成
+                {t('link.createAnother', language)}
               </Button>
             </div>
           </>
         ) : (
           <div className="py-4 text-center text-gray-500">
-            リンク情報を読み込み中...
+            {t('link.loading', language)}
           </div>
         )}
       </CardContent>
