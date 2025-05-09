@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Copy, ChevronLeft } from "lucide-react"
+import { Copy, ChevronLeft, Share2 } from "lucide-react"
 import { QRCodeSVG } from "qrcode.react"
 import { useSearchParams } from "next/navigation"
 import { formatLinkId } from "@/lib/link-utils"
@@ -14,10 +14,14 @@ export default function LinkCreatedView({ onBack }: { onBack: () => void }) {
   const { language } = useLanguage();
   const [copied, setCopied] = useState(false)
   const [shareLinkUrl, setShareLinkUrl] = useState<string>("")
+  const [canShare, setCanShare] = useState(false)
   const searchParams = useSearchParams()
   const linkId = searchParams.get('id')
   
   useEffect(() => {
+    // Web Share API対応チェック
+    setCanShare(typeof navigator !== 'undefined' && !!navigator.share)
+    
     if (linkId) {
       // ID取得、受け取りURLを生成
       const baseUrl = window.location.origin
@@ -31,6 +35,33 @@ export default function LinkCreatedView({ onBack }: { onBack: () => void }) {
       navigator.clipboard.writeText(shareLinkUrl)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
+      toast({
+        description: t('link.copied', language),
+      })
+    }
+  }
+
+  // ネイティブシェア機能を使用
+  const handleShare = async () => {
+    if (!shareLinkUrl) return;
+    
+    try {
+      await navigator.share({
+        title: t('link.shareTitle', language),
+        text: t('link.shareText', language).replace('{id}', displayLinkId),
+        url: shareLinkUrl
+      });
+      
+      toast({
+        description: t('link.shareSuccess', language),
+      });
+    } catch (error) {
+      if ((error as Error).name !== 'AbortError') {
+        console.error('シェアに失敗しました:', error);
+        toast({
+          description: t('link.shareFailed', language),
+        });
+      }
     }
   }
 
@@ -83,8 +114,23 @@ export default function LinkCreatedView({ onBack }: { onBack: () => void }) {
               </div>
             </div>
 
-            <div className="mt-4">
-              <Button className="w-full" onClick={onBack}>
+            <div className="mt-4 flex flex-col gap-2">
+              {canShare && (
+                <Button 
+                  className="w-full" 
+                  onClick={handleShare}
+                  variant="default"
+                >
+                  <Share2 className="mr-2 h-4 w-4" />
+                  {t('link.share', language)}
+                </Button>
+              )}
+              
+              <Button 
+                className="w-full" 
+                onClick={onBack}
+                variant={canShare ? "outline" : "default"}
+              >
                 {t('link.createAnother', language)}
               </Button>
             </div>
@@ -95,6 +141,7 @@ export default function LinkCreatedView({ onBack }: { onBack: () => void }) {
           </div>
         )}
       </CardContent>
+      
       <Toaster />
     </Card>
   )
