@@ -728,38 +728,23 @@ export default function SenderUI() {
                     </SelectItem>
                   )
                 })}
-                <SelectItem value="nft">NFT</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
-          {selectedToken === "nft" ? (
-            <div>
-              <label className="mb-2 block text-sm font-medium">{t('sender.selectNFT', language)}</label>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="cursor-pointer rounded-lg border-2 border-dashed border-gray-300 p-4 text-center hover:border-green-500">
-                  <Plus className="mx-auto h-8 w-8 text-gray-400" />
-                  <span className="mt-1 block text-xs text-gray-500">{t('sender.selectNFT', language)}</span>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <>
-              <div>
-                <label className="mb-2 block text-sm font-medium">{t('sender.amount', language)}</label>
-                <Input 
-                  type="number" 
-                  placeholder="0.00" 
-                  value={amount} 
-                  onChange={(e) => setAmount(e.target.value)} 
-                />
-                <p className="mt-1 text-xs text-gray-500">{t('sender.feeNote', language)}</p>
-              </div>
-              
-              {/* 有効期限選択の追加 */}
-              {renderExpirationSelect()}
-            </>
-          )}
+          <div>
+            <label className="mb-2 block text-sm font-medium">{t('sender.amount', language)}</label>
+            <Input 
+              type="number" 
+              placeholder="0.00" 
+              value={amount} 
+              onChange={(e) => setAmount(e.target.value)} 
+            />
+            <p className="mt-1 text-xs text-gray-500">{t('sender.feeNote', language)}</p>
+          </div>
+          
+          {/* 有効期限選択の追加 */}
+          {renderExpirationSelect()}
 
           <Button
             className="mt-6 w-full bg-green-500 text-white hover:bg-green-600"
@@ -768,7 +753,7 @@ export default function SenderUI() {
             disabled={
               !isConnected || 
               !selectedToken || 
-              (selectedToken !== "nft" && !amount) || 
+              !amount || 
               isCreatingLink || 
               isConfirming ||
               isLoading
