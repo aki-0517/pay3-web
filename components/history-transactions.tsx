@@ -141,7 +141,13 @@ const TOKEN_SYMBOLS: Record<string, { symbol: string; decimals: number }> = {
     symbol: "ETH",
     decimals: 18
   },
+  // Mainnet USDC
   "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": {
+    symbol: "USDC",
+    decimals: 6
+  },
+  // Sepolia USDC
+  "0x036cbd53842c5426634e7929541ec2318f3dcf7e": {
     symbol: "USDC",
     decimals: 6
   },

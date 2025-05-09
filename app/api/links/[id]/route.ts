@@ -109,13 +109,38 @@ const LINK_CREATOR_ABI = [
   }
 ] as const;
 
+// トークンのコントラクトアドレスを環境変数から定義
+const TOKEN_ADDRESSES = {
+  [base.id]: {
+    eth: undefined,
+    usdc: "0x036cbd53842c5426634e7929541ec2318f3dcf7e" as `0x${string}`,
+    usdt: process.env.NEXT_PUBLIC_USDT_ADDRESS_MAINNET as `0x${string}` | undefined,
+  },
+  [baseSepolia.id]: {
+    eth: undefined,
+    usdc: "0x036cbd53842c5426634e7929541ec2318f3dcf7e" as `0x${string}`,
+    usdt: process.env.NEXT_PUBLIC_USDT_ADDRESS_SEPOLIA as `0x${string}` | undefined,
+  },
+} as const satisfies Record<string, Record<string, `0x${string}` | undefined>>
+
+// デシマルの定義
+const TOKEN_DECIMALS = {
+  eth: 18,
+  usdc: 6,  // 18から6に修正
+  usdt: 6,
+} as const
+
 // トークン名のマッピング
 const TOKEN_SYMBOLS: Record<string, { symbol: string; decimals: number }> = {
   "0x0000000000000000000000000000000000000000": {
     symbol: "ETH",
     decimals: 18
   },
-  // 他のトークンを追加
+  "0x036cbd53842c5426634e7929541ec2318f3dcf7e": {
+    symbol: "USDC",
+    decimals: 6  // 18から6に修正
+  },
+  // 必要に応じて他のトークンを追加
 };
 
 export async function GET(

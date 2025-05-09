@@ -67,6 +67,19 @@ const LINK_CREATOR_ADDRESS = {
   [CHAIN_IDS.BASE_SEPOLIA]: process.env.NEXT_PUBLIC_LINK_CREATOR_ADDRESS_SEPOLIA || "0x..."
 } as const
 
+// Constants.solからのトークンアドレスを追加
+const CONSTANTS_TOKEN_ADDRESSES = {
+  ETH: "0x0000000000000000000000000000000000000000" as `0x${string}`,
+  USDC: {
+    MAINNET: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as `0x${string}`,
+    // BaseではなくEthereumのアドレス。実際のBase用アドレスに置き換える必要あり
+  },
+  USDT: {
+    MAINNET: "0xdAC17F958D2ee523a2206206994597C13D831ec7" as `0x${string}`,
+    // BaseではなくEthereumのアドレス。実際のBase用アドレスに置き換える必要あり
+  }
+}
+
 // LinkCreator ABIの定義
 const LINK_CREATOR_ABI = [
   {
@@ -139,8 +152,73 @@ const LINK_CREATOR_ABI = [
     ],
     "name": "LinkCreated",
     "type": "event"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "tokenAddress",
+        "type": "address"
+      }
+    ],
+    "name": "supportedTokens",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "tokenAddress",
+        "type": "address"
+      },
+      {
+        "internalType": "bool",
+        "name": "supported",
+        "type": "bool"
+      }
+    ],
+    "name": "setTokenSupported",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
   }
 ] as const
+
+// ERC20承認用の標準ABI
+const ERC20_ABI = [
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "spender",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "approve",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+] as const;
 
 export default function SenderUI() {
   const [selectedToken, setSelectedToken] = useState("")
@@ -288,17 +366,125 @@ export default function SenderUI() {
       // コントラクトのアドレスを取得
       const contractAddress = LINK_CREATOR_ADDRESS[CHAIN_IDS.BASE_SEPOLIA] as `0x${string}`;
       
-      // ETHの額をWeiに変換
-      const amountInWei = parseUnits(amount, TOKEN_DECIMALS.eth);
+      // 選択されたトークンに基づいて、トークンアドレスとデシマルを設定
+      let tokenAddress: `0x${string}`;
+      let valueToSend: bigint = BigInt(0);
+      let amountInWei: bigint;
+      
+      if (selectedToken === 'eth') {
+        // ETHの場合
+        tokenAddress = '0x0000000000000000000000000000000000000000' as `0x${string}`;
+        amountInWei = parseUnits(amount, TOKEN_DECIMALS.eth);
+        valueToSend = amountInWei; // ETHを送金する場合はvalueにセット
+      } else if (selectedToken === 'usdc' || selectedToken === 'usdt') {
+        // ERC20トークンの場合
+        tokenAddress = selectedToken === 'usdc' 
+          ? getAvailableTokens().usdc as `0x${string}`
+          : getAvailableTokens().usdt as `0x${string}`;
+        
+        const decimals = selectedToken === 'usdc' ? TOKEN_DECIMALS.usdc : TOKEN_DECIMALS.usdt;
+        amountInWei = parseUnits(amount, decimals);
+        
+        // トークンがサポートされているか確認
+        try {
+          const isSupported = await client.readContract({
+            address: contractAddress,
+            abi: LINK_CREATOR_ABI,
+            functionName: 'supportedTokens',
+            args: [tokenAddress]
+          });
+          
+          if (!isSupported) {
+            console.log(`トークン ${selectedToken.toUpperCase()} はサポートされていません。サポートリストに追加します。`);
+            
+            // トークンをサポートリストに追加
+            try {
+              const setTokenSupportedHash = await writeContractAsync({
+                address: contractAddress,
+                abi: LINK_CREATOR_ABI,
+                functionName: 'setTokenSupported',
+                args: [tokenAddress, true],
+                chainId: CHAIN_IDS.BASE_SEPOLIA
+              });
+              
+              console.log(`setTokenSupported transaction hash: ${setTokenSupportedHash}`);
+              
+              // トークンサポート設定トランザクションの完了を待機
+              const setTokenSupportedReceipt = await client.waitForTransactionReceipt({ hash: setTokenSupportedHash });
+              console.log('setTokenSupported transaction receipt:', setTokenSupportedReceipt);
+            } catch (error: unknown) {
+              console.error('Error setting token supported:', error);
+              let errorMessage = 'トークンサポート設定中に不明なエラーが発生しました';
+              
+              if (error instanceof Error) {
+                errorMessage = error.message;
+              } else if (typeof error === 'string') {
+                errorMessage = error;
+              } else if (error && typeof error === 'object' && 'message' in error) {
+                errorMessage = String((error as { message: unknown }).message);
+              }
+              
+              throw new Error(`トークンをサポートリストに追加できませんでした: ${errorMessage}`);
+            }
+          }
+          
+          console.log(`トークン ${selectedToken.toUpperCase()} はサポートされています`);
+        } catch (error: unknown) {
+          console.error('トークンサポート確認エラー:', error);
+          // エラーメッセージを安全に取得するための型チェック
+          let errorMessage = 'トークンサポート確認中に不明なエラーが発生しました';
+          
+          if (error instanceof Error) {
+            errorMessage = error.message;
+          } else if (typeof error === 'string') {
+            errorMessage = error;
+          } else if (error && typeof error === 'object' && 'message' in error) {
+            errorMessage = String((error as { message: unknown }).message);
+          }
+          
+          throw new Error(`トークンがサポートされているか確認できませんでした: ${errorMessage}`);
+        }
+        
+        // ERC20トークンを使用する場合は、先に承認（approve）が必要
+        try {
+          console.log(`Approving ${amount} ${selectedToken.toUpperCase()} to contract ${contractAddress}`);
+          
+          const approveHash = await writeContractAsync({
+            address: tokenAddress,
+            abi: ERC20_ABI,
+            functionName: 'approve',
+            args: [contractAddress, amountInWei],
+            chainId: CHAIN_IDS.BASE_SEPOLIA
+          });
+          
+          console.log(`Approval transaction hash: ${approveHash}`);
+          
+          // 承認トランザクションの完了を待機
+          const approveReceipt = await client.waitForTransactionReceipt({ hash: approveHash });
+          console.log('Approval transaction receipt:', approveReceipt);
+        } catch (error: unknown) {
+          console.error('Error approving tokens:', error);
+          let errorMessage = 'トークン承認中に不明なエラーが発生しました';
+          
+          if (error instanceof Error) {
+            errorMessage = error.message;
+          } else if (typeof error === 'string') {
+            errorMessage = error;
+          } else if (error && typeof error === 'object' && 'message' in error) {
+            errorMessage = String((error as { message: unknown }).message);
+          }
+          
+          throw new Error(`トークン承認に失敗しました: ${errorMessage}`);
+        }
+      } else {
+        throw new Error('不明なトークンタイプです');
+      }
       
       // 有効期限（秒）
       const expiration = BigInt(expirationDuration);
       
       // カスタムデータ（空）
       const claimData = '0x' as `0x${string}`;
-      
-      // ETHのトークンアドレスは0アドレス
-      const tokenAddress = '0x0000000000000000000000000000000000000000' as `0x${string}`;
 
       // リンク作成トランザクションを送信
       const hash = await writeContractAsync({
@@ -307,7 +493,7 @@ export default function SenderUI() {
         functionName: 'createLink',
         args: [tokenAddress, amountInWei, expiration, claimData],
         chainId: CHAIN_IDS.BASE_SEPOLIA,
-        value: amountInWei // ETHを送金する場合
+        value: valueToSend // ETHの場合のみ値をセット、それ以外は0
       });
       console.log(`Transaction hash: ${hash}`);
 
@@ -363,9 +549,19 @@ export default function SenderUI() {
 
       // 作成完了後のリダイレクト
       router.push(`/created?id=${encodeURIComponent(actualLinkId)}`);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error creating link:', error);
-      setError(error instanceof Error ? error.message : 'Failed to create link');
+      let errorMessage = 'リンク作成中に不明なエラーが発生しました';
+      
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      } else if (error && typeof error === 'object' && 'message' in error) {
+        errorMessage = String((error as { message: unknown }).message);
+      }
+      
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -555,6 +751,7 @@ export default function SenderUI() {
                   value={amount} 
                   onChange={(e) => setAmount(e.target.value)} 
                 />
+                <p className="mt-1 text-xs text-gray-500">※送信時に0.5%の手数料が差し引かれます</p>
               </div>
               
               {/* 有効期限選択の追加 */}
@@ -575,13 +772,15 @@ export default function SenderUI() {
               isLoading
             }
           >
-            {isCreatingLink || isConfirming ? "処理中..." : "リンクを作成"}
+            {isCreatingLink || isConfirming || isLoading ? "処理中..." : "リンクを作成"}
           </Button>
         </div>
 
         {/* エラー表示 */}
-        {isError && (
-          <p className="mt-4 text-red-600">エラーが発生しました: {error}</p>
+        {error && (
+          <div className="mt-4 p-3 rounded bg-red-50 border border-red-200">
+            <p className="text-red-600 text-sm">{error}</p>
+          </div>
         )}
 
         {verifying ? (

@@ -648,7 +648,7 @@ export default function CryptoReceive({ transactionId }: CryptoReceiveProps) {
 
             <div className="mt-2 text-center text-xs text-gray-500">
               {hasPaymasterSupport ? 
-                "ガス代は不要です。当社が負担します。" : 
+                "ガス代は不要です。0.5%の手数料が差し引かれます" : 
                 "ガス代が必要です。ウォレットに十分なETHがあることを確認してください。"}
             </div>
             
